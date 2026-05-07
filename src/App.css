@@ -1,0 +1,67 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0f172a;
+  color: white;
+}
+
+.app {
+  min-height: 100vh;
+  text-align: center;
+  padding: 20px;
+}
+
+.chat {
+  height: 400px;
+  overflow-y: auto;
+  margin: 20px auto;
+  padding: 10px;
+  max-width: 900px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bubble {
+  padding: 12px;
+  margin: 10px;
+  border-radius: 15px;
+  max-width: 60%;
+  line-height: 1.5;
+}
+
+.user {
+  background: #3b82f6;
+  margin-left: auto;
+}
+
+.bot {
+  background: #10b981;
+  margin-right: auto;
+}
+
+.mic {
+  min-width: 76px;
+  min-height: 76px;
+  font-size: 18px;
+  padding: 20px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.12);
+}
+
+.live {
+  min-height: 32px;
+  font-size: 18px;
+  color: #22d3ee;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 640px) {
+  .bubble {
+    max-width: 84%;
+  }
+}
