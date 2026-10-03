@@ -1,3 +1,23 @@
+function getStoredGuestSessionId() {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage.getItem("cutm_guest_session_id") || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredGuestSessionId(id) {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      if (id) {
+        sessionStorage.setItem("cutm_guest_session_id", id);
+      } else {
+        sessionStorage.removeItem("cutm_guest_session_id");
+      }
+    }
+  } catch {}
+}
+
 import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -364,6 +384,7 @@ export default function VoiceBot() {
   const utteranceRef = useRef(null);
   const isManualStopRef = useRef(false);
   const activeSessionIdRef = useRef(0);
+  const guestSessionIdRef = useRef(getStoredGuestSessionId());
   // Guard against stale async responses overwriting a newer active turn
   const activeTurnSeqRef = useRef(0);
 
@@ -436,6 +457,8 @@ export default function VoiceBot() {
     setLastReply("");
     pendingAutoScrollRef.current = true;
     setActiveConversationId("");
+    guestSessionIdRef.current = null;
+    setStoredGuestSessionId(null);
     setInputText("");
     setLiveText("Tap mic to speak");
     setActivity("Ready");
@@ -458,6 +481,8 @@ export default function VoiceBot() {
     stopAudio();
     setMessages([]);
     setQuickActions([]);
+    guestSessionIdRef.current = null;
+    setStoredGuestSessionId(null);
     setErrorState(null);
     setMicError(null);
     setLastReply("");
@@ -513,7 +538,7 @@ export default function VoiceBot() {
     } catch (err) { console.error(err); }
   }
 
-  const handleLogout = () => { stopAudio(); localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/"; };
+  const handleLogout = () => { stopAudio(); guestSessionIdRef.current = null; setStoredGuestSessionId(null); localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/"; };
 
   const scrollToBottom = useCallback(() => {
     if (isAtBottomRef.current || pendingAutoScrollRef.current) {
@@ -651,12 +676,27 @@ export default function VoiceBot() {
         askAI._thinkTimer = thinkTimer;
       }
 
+      const guestSessionId = !isLoggedIn ? (guestSessionIdRef.current || getStoredGuestSessionId()) : null;
+
       const res = await axios.post(CHAT_URL, {
         message: userMsg,
         conversationId: activeConversationId,
-        ...(isLoggedIn ? {} : { messages: messages.filter(m => m && (m.role === "user" || m.role === "assistant")).slice(-8).map(m => ({ role: m.role, content: m.text })) }),
+        ...(isLoggedIn ? {} : {
+          messages: messages.filter(m => m && (m.role === "user" || m.role === "assistant")).slice(-8).map(m => ({ role: m.role, content: m.text })),
+          ...(guestSessionId ? { guestSessionId } : {}),
+        }),
         options: { memoryEnabled, internetEnabled, personality, voiceMode: isVoiceCall },
-      }, { headers: authHeaders });
+      }, {
+        headers: {
+          ...authHeaders,
+          ...(guestSessionId ? { "x-guest-session-id": guestSessionId } : {}),
+        },
+      });
+
+      if (!isLoggedIn && res.data?.guestSessionId) {
+        guestSessionIdRef.current = res.data.guestSessionId;
+        setStoredGuestSessionId(res.data.guestSessionId);
+      }
 
       // Clear the think timer if still pending (response arrived before 2 s)
       if (askAI._thinkTimer) { clearTimeout(askAI._thinkTimer); askAI._thinkTimer = null; }
