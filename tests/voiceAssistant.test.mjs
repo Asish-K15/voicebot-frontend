@@ -1,5 +1,11 @@
-import { describe, it } from "node:test";
+import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
+import { renderMarkdown, setPurifierWindow, escapeHtml } from "../src/utils/markdown.js";
+
+// Initialize JSDOM for testing production DOMPurify in Node
+const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+setPurifierWindow(dom.window);
 
 // ─── Orb States Mirror ───────────────────────────────────────────────────
 const ORB_STATES = {
@@ -44,40 +50,7 @@ function computeVoiceModeState({ orbState, isListening, isSpeaking, messages, li
   };
 }
 
-function renderMarkdown(text) {
-  if (!text) return "";
-  let html = String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-    .replace(/^### (.*$)/gm, "<h3>$1</h3>")
-    .replace(/^## (.*$)/gm, "<h2>$1</h2>")
-    .replace(/^# (.*$)/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/__(.*?)__/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/_(.*?)_/g, "<em>$1</em>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/```(\w*)\n([\s\S]*?)```/g, "<pre><code>$2</code></pre>")
-    .replace(/\|(.+)\|/g, (match, tableContent) => {
-      if (tableContent.trim().match(/^[-:| ]+$/)) return '<hr class="table-sep">';
-      const cells = tableContent.split("|").map(c => c.trim()).filter(Boolean);
-      return `<tr>${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
-    })
-    .replace(/<tr>.*?<\/tr>/g, (match) => {
-      if (match.includes("<hr")) return "";
-      return match;
-    })
-    .replace(/^[•*-] (.*)$/gm, "<li>$1</li>")
-    .replace(/^\d+\.\s+(.*)$/gm, "<li>$1</li>")
-    .replace(/(<li>.*?<\/li>(\s*<li>.*?<\/li>)*)/g, "<ul>$1</ul>")
-    .replace(/^---$/gm, "<hr>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br>");
-  return `<p>${html}</p>`;
-}
+// (Local duplicate removed: production renderMarkdown imported from ../src/utils/markdown.js)
 
 // ─── Mock SpeechRecognition Simulation ──────────────────────────────────
 class MockSpeechRecognition {
@@ -814,9 +787,9 @@ describe("ChatGPT-style Persistent Conversation Thread Tests", () => {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Markdown Sanitization & XSS Prevention Tests
+// Production Markdown Sanitization & Multi-Layer XSS Prevention Tests
 // ═══════════════════════════════════════════════════════════════════════════
-describe("Markdown Sanitization & XSS Prevention Tests", () => {
+describe("Production Markdown Sanitization & Multi-Layer XSS Prevention Tests", () => {
   it("Sanitizes script tags from input and model responses", () => {
     const malicious = "<script>alert('xss')</script>";
     const output = renderMarkdown(malicious);
@@ -824,27 +797,67 @@ describe("Markdown Sanitization & XSS Prevention Tests", () => {
     assert.ok(output.includes("&lt;script&gt;"), "Script tag must be HTML entity encoded");
   });
 
-  it("Sanitizes onerror and img tag injection", () => {
-    const malicious = '<img src="x" onerror="alert(1)">';
+  it("Sanitizes onerror, onload, and other event handlers on tags", () => {
+    const malicious = '<img src="x" onerror="alert(1)" onload="alert(2)" onclick="alert(3)">';
     const output = renderMarkdown(malicious);
     assert.ok(!output.includes("<img"), "Raw <img> tag must not exist");
     assert.ok(output.includes("&lt;img"), "img tag must be entity encoded");
   });
 
-  it("Sanitizes iframe injection", () => {
-    const malicious = '<iframe src="javascript:alert(1)"></iframe>';
+  it("Sanitizes iframe, object, embed, and svg tag injection", () => {
+    const malicious = '<iframe src="javascript:alert(1)"></iframe><object data="test"></object><svg onload="alert(1)"></svg>';
     const output = renderMarkdown(malicious);
     assert.ok(!output.includes("<iframe"), "Raw <iframe> tag must not exist");
-    assert.ok(output.includes("&lt;iframe"), "iframe tag must be entity encoded");
+    assert.ok(!output.includes("<object"), "Raw <object> tag must not exist");
+    assert.ok(!output.includes("<svg"), "Raw <svg> tag must not exist");
+    assert.ok(output.includes("&lt;iframe"), "iframe must be entity encoded");
   });
 
-  it("Preserves valid safe Markdown formatting (bold, italics, code, headings, lists)", () => {
-    const text = "### Title\n\n**bold** and *italic* and `code`\n\n- Item 1\n- Item 2";
+  it("Sanitizes unsafe Markdown link protocols (javascript:, data:, vbscript:)", () => {
+    const jsLink = "[Click Me](javascript:alert(document.cookie))";
+    const dataLink = "[Data URI](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)";
+    const vbLink = "[VB Link](vbscript:msgbox(1))";
+
+    const outJs = renderMarkdown(jsLink);
+    const outData = renderMarkdown(dataLink);
+    const outVb = renderMarkdown(vbLink);
+
+    assert.ok(!outJs.includes('href="javascript:'), "javascript: href must be blocked");
+    assert.ok(!outData.includes('href="data:'), "data: href must be blocked");
+    assert.ok(!outVb.includes('href="vbscript:'), "vbscript: href must be blocked");
+    assert.ok(outJs.includes('href="#unsafe-link"'), "Unsafe href should be replaced with safe anchor");
+  });
+
+  it("Preserves safe Markdown links (http:, https:, mailto:, /)", () => {
+    const safeLink = "[Centurion University](https://cutm.ac.in)";
+    const output = renderMarkdown(safeLink);
+    assert.ok(output.includes('<a href="https://cutm.ac.in" target="_blank" rel="noopener noreferrer">Centurion University</a>'));
+  });
+
+  it("Preserves valid safe Markdown formatting (bold, italics, code, headings, lists, tables, hr)", () => {
+    const text = "### Title\n\n**bold text** and *italic text* and `inline_code()`\n\n- Item A\n- Item B\n\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n\n---";
     const output = renderMarkdown(text);
     assert.ok(output.includes("<h3>Title</h3>"));
-    assert.ok(output.includes("<strong>bold</strong>"));
-    assert.ok(output.includes("<em>italic</em>"));
-    assert.ok(output.includes("<code>code</code>"));
-    assert.ok(output.includes("<li>Item 1</li>"));
+    assert.ok(output.includes("<strong>bold text</strong>"));
+    assert.ok(output.includes("<em>italic text</em>"));
+    assert.ok(output.includes("<code>inline_code()</code>"));
+    assert.ok(output.includes("<li>Item A</li>"));
+    assert.ok(output.includes("<table><tbody>"));
+    assert.ok(output.includes("<tr><td>Cell 1</td><td>Cell 2</td></tr>"));
+    assert.ok(output.includes("<hr>"));
+  });
+
+  it("Window-undefined safety: fallback strictly escapes HTML without executing payloads", () => {
+    // Temporarily unset purifier window
+    setPurifierWindow(null);
+    const malicious = '<script>alert(1)</script><b onmouseover="alert(2)">test</b>';
+    const output = renderMarkdown(malicious);
+    
+    assert.ok(!output.includes("<script>"), "Fallback must never emit raw <script>");
+    assert.ok(!output.includes("<b onmouseover"), "Fallback must never emit raw unescaped tag with attributes");
+    assert.ok(output.includes("&lt;script&gt;"), "Fallback must entity-encode all raw tags");
+
+    // Restore purifier window
+    setPurifierWindow(dom.window);
   });
 });

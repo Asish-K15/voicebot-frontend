@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback, memo } from "react";
-import DOMPurify from "dompurify";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "../App.css";
 import VoiceMode from "../components/VoiceMode.jsx";
+import { renderMarkdown } from "../utils/markdown.js";
+export { renderMarkdown };
 
 const API_BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
 const CHAT_URL = API_BASE ? `${API_BASE}/chat` : "/chat";
@@ -62,60 +63,7 @@ function createUserMessage(text) { return normalizeMessage({ role: "user", text 
 
 function createAssistantMessage({ text, speak, intent, quickActions, buttons, map, links, metadata, conversationState }) { return normalizeMessage({ role: "assistant", text, speak, intent, quickActions, buttons, map, links, metadata, conversationState }); }
 
-// ─── Full Markdown Renderer ──────────────────────────────────────────────
-export function renderMarkdown(text) {
-  if (!text) return "";
-  let html = String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-    // Headings
-    .replace(/^### (.*$)/gm, "<h3>$1</h3>")
-    .replace(/^## (.*$)/gm, "<h2>$1</h2>")
-    .replace(/^# (.*$)/gm, "<h1>$1</h1>")
-    // Bold
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/__(.*?)__/g, "<strong>$1</strong>")
-    // Italic
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/_(.*?)_/g, "<em>$1</em>")
-    // Inline code
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, "<pre><code>$2</code></pre>")
-    // Tables
-    .replace(/\|(.+)\|/g, (match, tableContent) => {
-      if (tableContent.trim().match(/^[-:| ]+$/)) return '<hr class="table-sep">';
-      const cells = tableContent.split("|").map(c => c.trim()).filter(Boolean);
-      return `<tr>${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
-    })
-    .replace(/<tr>.*?<\/tr>/g, (match) => {
-      if (match.includes("<hr")) return "";
-      return match;
-    })
-    // Bullet lists
-    .replace(/^[•*-] (.*)$/gm, "<li>$1</li>")
-    // Numbered lists
-    .replace(/^\d+\.\s+(.*)$/gm, "<li>$1</li>")
-    // Wrap consecutive <li> in <ul>
-    .replace(/(<li>.*?<\/li>(\s*<li>.*?<\/li>)*)/g, "<ul>$1</ul>")
-    // Horizontal rules
-    .replace(/^---$/gm, "<hr>")
-    // Line breaks
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br>");
-
-  const formatted = `<p>${html}</p>`;
-  if (typeof window !== "undefined" && DOMPurify && typeof DOMPurify.sanitize === "function") {
-    return DOMPurify.sanitize(formatted, {
-      ALLOWED_TAGS: ["p", "br", "strong", "em", "code", "pre", "h1", "h2", "h3", "ul", "ol", "li", "tr", "td", "th", "table", "tbody", "thead", "hr", "span"],
-      ALLOWED_ATTR: ["class"]
-    });
-  }
-  return formatted;
-}
+// Markdown rendering handled by utils/markdown.js
 
 // ─── Rich Cards (from backend metadata only) ──────────────────────────
 function RichCardRenderer({ card }) {
