@@ -848,16 +848,18 @@ describe("Production Markdown Sanitization & Multi-Layer XSS Prevention Tests", 
   });
 
   it("Window-undefined safety: fallback strictly escapes HTML without executing payloads", () => {
-    // Temporarily unset purifier window
+    // Temporarily unset purifier window — must be restored in finally so concurrent siblings are unaffected
     setPurifierWindow(null);
-    const malicious = '<script>alert(1)</script><b onmouseover="alert(2)">test</b>';
-    const output = renderMarkdown(malicious);
-    
-    assert.ok(!output.includes("<script>"), "Fallback must never emit raw <script>");
-    assert.ok(!output.includes("<b onmouseover"), "Fallback must never emit raw unescaped tag with attributes");
-    assert.ok(output.includes("&lt;script&gt;"), "Fallback must entity-encode all raw tags");
+    try {
+      const malicious = '<script>alert(1)</script><b onmouseover="alert(2)">test</b>';
+      const output = renderMarkdown(malicious);
 
-    // Restore purifier window
-    setPurifierWindow(dom.window);
+      assert.ok(!output.includes("<script>"), "Fallback must never emit raw <script>");
+      assert.ok(!output.includes("<b onmouseover"), "Fallback must never emit raw unescaped tag with attributes");
+      assert.ok(output.includes("&lt;script&gt;"), "Fallback must entity-encode all raw tags");
+    } finally {
+      // Restore purifier window unconditionally
+      setPurifierWindow(dom.window);
+    }
   });
 });
